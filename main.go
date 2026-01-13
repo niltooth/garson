@@ -261,7 +261,7 @@ func hostnameURL(listener net.Listener) string {
 }
 
 func lanURL(listener net.Listener) string {
-	ip := defaultRouteIP()
+	ip := firstUpIPv4()
 	if ip == "" {
 		return ""
 	}
@@ -497,23 +497,42 @@ func hasUsableAddress(addrs []string) bool {
 	return false
 }
 
-// defaultRouteIP returns the IPv4 address of the interface used for the default route.
-// It does this by creating a UDP "connection" to a well-known address without sending packets.
-func defaultRouteIP() string {
-	conn, err := net.Dial("udp", "8.8.8.8:80")
+// firstUpIPv4 returns the first non-loopback, non-link-local IPv4 on an up interface.
+func firstUpIPv4() string {
+	ifaces, err := net.Interfaces()
 	if err != nil {
 		return ""
 	}
-	defer conn.Close()
-	localAddr, ok := conn.LocalAddr().(*net.UDPAddr)
-	if !ok {
-		return ""
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			ip4 := ip.To4()
+			if ip4 == nil {
+				continue
+			}
+			if ip4.IsLoopback() || ip4.IsLinkLocalUnicast() || ip4.IsUnspecified() {
+				continue
+			}
+			return ip4.String()
+		}
 	}
-	ip4 := localAddr.IP.To4()
-	if ip4 == nil || ip4.IsLoopback() || ip4.IsLinkLocalUnicast() || ip4.IsUnspecified() {
-		return ""
-	}
-	return ip4.String()
+	return ""
 }
 
 func detectDefaultUser() string {
