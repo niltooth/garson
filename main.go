@@ -152,6 +152,7 @@ func main() {
 		proto = "https"
 	}
 	log.Printf("Serving %s at %s://%s (open: %s)", absDir, proto, listener.Addr(), openURL)
+	log.Printf("Copy/paste URL (with auth): %s", openURLWithAuth)
 
 	server := &http.Server{Handler: handler}
 	startMaxRuntimeTimer(server, *maxRuntime)
