@@ -97,7 +97,6 @@ func generatePassword() (string, error) {
 
 func main() {
 	port := flag.Int("port", 0, "optional port (0 picks a random available port)")
-	dir := flag.String("dir", ".", "directory to serve")
 	user := flag.String("user", defaultUser, "basic auth username")
 	openBrowserFlag := flag.Bool("open-browser", true, "open browser after start when supported")
 	openHost := flag.String("open-host", "lan", "host to use when opening: local, hostname, lan")
@@ -108,23 +107,25 @@ func main() {
 	configPathFlag := flag.String("config", "", "path to config file (default: XDG config)")
 	flag.Parse()
 
+	pathArg := "."
+	if args := flag.Args(); len(args) > 0 {
+		pathArg = args[0]
+	}
+
 	cfgPath := effectiveConfigPath(*configPathFlag)
 	cfg, err := loadOrCreateConfig(cfgPath)
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
 
-	absDir, err := filepath.Abs(*dir)
+	targetPath, err := filepath.Abs(pathArg)
 	if err != nil {
-		log.Fatalf("resolve directory: %v", err)
+		log.Fatalf("resolve path: %v", err)
 	}
 
-	info, err := os.Stat(absDir)
+	info, err := os.Stat(targetPath)
 	if err != nil {
-		log.Fatalf("open directory: %v", err)
-	}
-	if !info.IsDir() {
-		log.Fatalf("path is not a directory: %s", absDir)
+		log.Fatalf("open path: %v", err)
 	}
 
 	password, err := generatePassword()
@@ -132,8 +133,14 @@ func main() {
 		log.Fatalf("generate password: %v", err)
 	}
 
-	fileServer := http.FileServer(http.Dir(absDir))
-	handler := loggingMiddleware(authMiddleware(fileServer, *user, password))
+	var baseHandler http.Handler
+	if info.IsDir() {
+		fileServer := http.FileServer(http.Dir(targetPath))
+		baseHandler = fileServer
+	} else {
+		baseHandler = singleFileHandler(targetPath)
+	}
+	handler := loggingMiddleware(authMiddleware(baseHandler, *user, password))
 
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
@@ -151,7 +158,11 @@ func main() {
 	if *tlsEnabled {
 		proto = "https"
 	}
-	log.Printf("Serving %s at %s://%s (open: %s)", absDir, proto, listener.Addr(), openURL)
+	serveTarget := targetPath
+	if !info.IsDir() {
+		serveTarget = fmt.Sprintf("%s (file)", targetPath)
+	}
+	log.Printf("Serving %s at %s://%s (open: %s)", serveTarget, proto, listener.Addr(), openURL)
 	log.Printf("Copy/paste URL (with auth): %s", openURLWithAuth)
 
 	server := &http.Server{Handler: handler}
@@ -266,6 +277,17 @@ func lanURL(listener net.Listener) string {
 		return ""
 	}
 	return fmt.Sprintf("http://%s:%d", ip, listenerPort(listener))
+}
+
+func singleFileHandler(path string) http.Handler {
+	name := filepath.Base(path)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" && r.URL.Path != "/"+name {
+			http.NotFound(w, r)
+			return
+		}
+		http.ServeFile(w, r, path)
+	})
 }
 
 type Config struct {

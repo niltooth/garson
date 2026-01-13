@@ -5,8 +5,6 @@ sharing files between machines.
 ## Usage
 ```
 go run .
-  -dir string
-        directory to serve (default ".")
   -port int
         optional port (0 picks a random available port)
   -user string
@@ -27,9 +25,10 @@ go run .
         path to config file (default XDG config)
 ```
 
-Examples:
+Examples (positional path argument, default "."):
 - Serve the current directory on a random port (HTTPS): `go run .`
-- Serve `/tmp/files` on port 8080: `go run . -dir /tmp/files -port 8080`
+- Serve `/tmp/files` on port 8080: `go run . /tmp/files -port 8080`
+- Serve a single file: `go run . ./myfile.iso`
 - Supply a custom username: `go run . -user admin`
 - Skip auto-opening a browser (headless): `go run . -open-browser=false`
 - Auto-open uses the generated credentials in the URL so the first tab is already authenticated; disable with `-open-browser=false` if you prefer to copy/paste creds manually.
