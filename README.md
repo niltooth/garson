@@ -21,6 +21,8 @@ go run .
         path to TLS certificate (overrides generated self-signed)
   -tls-key string
         path to TLS private key (overrides generated self-signed)
+  -plain
+        disable both auth and TLS for plain open HTTP
   -config string
         path to config file (default XDG config)
 ```
@@ -36,6 +38,7 @@ Examples (positional path argument, default "."):
 - Prefer your LAN IP if available: `go run . -open-host=lan`
 - Limit to 30 minutes of runtime: `go run . -max-runtime=30m`
 - Disable TLS (serve plain HTTP): `go run . -tls=false`
+- Plain open HTTP (no auth, no TLS): `go run . -plain`
 - Use your own cert/key: set `cert_file`/`key_file` in the config or pass `-tls-cert`/`-tls-key`
 - Custom config location: `go run . -config /tmp/garson.toml`
 

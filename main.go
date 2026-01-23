@@ -104,6 +104,7 @@ func main() {
 	tlsEnabled := flag.Bool("tls", true, "enable TLS with a cached self-signed cert")
 	tlsCertFile := flag.String("tls-cert", "", "path to TLS certificate (overrides cached self-signed)")
 	tlsKeyFile := flag.String("tls-key", "", "path to TLS private key (overrides cached self-signed)")
+	plainHTTP := flag.Bool("plain", false, "disable both auth and TLS for plain open HTTP")
 	configPathFlag := flag.String("config", "", "path to config file (default: XDG config)")
 	flag.Parse()
 
@@ -128,9 +129,13 @@ func main() {
 		log.Fatalf("open path: %v", err)
 	}
 
-	password, err := generatePassword()
-	if err != nil {
-		log.Fatalf("generate password: %v", err)
+	var password string
+	if !*plainHTTP {
+		var err error
+		password, err = generatePassword()
+		if err != nil {
+			log.Fatalf("generate password: %v", err)
+		}
 	}
 
 	var baseHandler http.Handler
@@ -140,7 +145,11 @@ func main() {
 	} else {
 		baseHandler = singleFileHandler(targetPath)
 	}
-	handler := loggingMiddleware(authMiddleware(baseHandler, *user, password))
+
+	var handler http.Handler = loggingMiddleware(baseHandler)
+	if !*plainHTTP {
+		handler = loggingMiddleware(authMiddleware(baseHandler, *user, password))
+	}
 
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
@@ -148,12 +157,20 @@ func main() {
 	}
 
 	openURL := pickOpenURL(listener, *openHost)
-	openURLWithAuth := withAuthURL(openURL, *user, password)
-	if *tlsEnabled {
-		openURL = ensureHTTPS(openURL)
-		openURLWithAuth = ensureHTTPS(openURLWithAuth)
+	var openURLWithAuth string
+	if *plainHTTP {
+		// Plain HTTP mode: no auth, no TLS
+		*tlsEnabled = false
+		openURLWithAuth = openURL
+		log.Printf("Plain HTTP mode: no auth, no TLS")
+	} else {
+		openURLWithAuth = withAuthURL(openURL, *user, password)
+		if *tlsEnabled {
+			openURL = ensureHTTPS(openURL)
+			openURLWithAuth = ensureHTTPS(openURLWithAuth)
+		}
+		log.Printf("Auth -> user: %s password: %s", *user, password)
 	}
-	log.Printf("Auth -> user: %s password: %s", *user, password)
 	proto := "http"
 	if *tlsEnabled {
 		proto = "https"
@@ -163,14 +180,20 @@ func main() {
 		serveTarget = fmt.Sprintf("%s (file)", targetPath)
 	}
 	log.Printf("Serving %s at %s://%s (open: %s)", serveTarget, proto, listener.Addr(), openURL)
-	log.Printf("Copy/paste URL (with auth): %s", openURLWithAuth)
+	if !*plainHTTP {
+		log.Printf("Copy/paste URL (with auth): %s", openURLWithAuth)
+	}
 
 	server := &http.Server{Handler: handler}
 	startMaxRuntimeTimer(server, *maxRuntime)
 
 	if *openBrowserFlag {
 		if canOpenBrowser() {
-			if err := openBrowser(openURLWithAuth); err != nil {
+			urlToOpen := openURLWithAuth
+			if *plainHTTP {
+				urlToOpen = openURL
+			}
+			if err := openBrowser(urlToOpen); err != nil {
 				log.Printf("browser open failed: %v", err)
 			}
 		} else {
